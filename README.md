@@ -4,10 +4,7 @@ A support ticketing system for Arvo Systems' support team, built as the
 **iNav Technologies Full Stack Developer hiring test** (dated 21-11-2026).
 
 > **Status:** Planning / analysis complete. No application code yet.
-> Implementation starts only after the open decisions in
-> [`STEPS.md`](./STEPS.md) (section 9) are confirmed.
-
-## The problem
+> Implementation starts only after the open decisions are confirmed.`n`n## The problem
 
 Arvo has 9 support agents handling ~40 tickets a day using a shared
 spreadsheet and a WhatsApp group. About 1 in 5 tickets was late last quarter,
@@ -49,7 +46,6 @@ Frontdesk replaces it.
 |------|---------|
 | `Hiring Test - Full Stack Developer.pdf` | The original brief |
 | `README.md` | This file |
-| `STEPS.md` | Beginner-friendly breakdown and step-by-step plan |
 
 ## Running locally
 
