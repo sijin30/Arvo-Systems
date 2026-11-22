@@ -13,6 +13,13 @@ from . import clock
 from .config import Settings
 
 _ALGORITHM = "HS256"
+MIN_PASSWORD_LENGTH = 8
+MAX_PASSWORD_LENGTH = 200
+
+# Who a token was issued to.  Agents and customers live in different tables whose ids
+# overlap, so a token is only ever valid for the kind it was issued for.
+AGENT = "agent"
+CUSTOMER = "customer"
 
 
 def hash_password(password: str, iterations: int) -> str:
@@ -38,17 +45,19 @@ def verify_password(password: str, stored: str) -> bool:
     return hmac.compare_digest(actual, expected)
 
 
-def create_token(settings: Settings, agent_id: int) -> str:
+def create_token(settings: Settings, kind: str, subject_id: int) -> str:
     issued = clock.now()
     payload = {
-        "sub": str(agent_id),
+        "typ": kind,
+        "sub": str(subject_id),
         "iat": int(issued.timestamp()),
         "exp": int((issued + timedelta(hours=settings.token_hours)).timestamp()),
     }
     return jwt.encode(payload, settings.secret_key, algorithm=_ALGORITHM)
 
 
-def read_token(settings: Settings, token: str) -> int | None:
+def read_token(settings: Settings, token: str) -> tuple[str, int] | None:
+    """Return (kind, id) for a valid, unexpired token, else None."""
     try:
         # Expiry is checked against the application clock (below), not the library's.
         payload = jwt.decode(
@@ -59,6 +68,9 @@ def read_token(settings: Settings, token: str) -> int | None:
         )
         if int(payload["exp"]) <= clock.now().timestamp():
             return None
-        return int(payload["sub"])
+        kind = payload["typ"]
+        if kind not in (AGENT, CUSTOMER):
+            return None
+        return kind, int(payload["sub"])
     except (jwt.PyJWTError, KeyError, ValueError):
         return None
