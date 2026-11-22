@@ -30,7 +30,9 @@ def database_url():
         return
     import pgserver
 
-    data_dir = Path(__file__).resolve().parents[1] / ".pgtest"
+    # PGTEST_DIR lets you keep the data outside a synced folder (OneDrive and friends
+    # delete the empty directories PostgreSQL needs).
+    data_dir = Path(os.environ.get("PGTEST_DIR") or Path(__file__).resolve().parents[1] / ".pgtest")
     server = pgserver.get_server(data_dir, cleanup_mode="stop")
     yield normalize_database_url(server.get_uri())
     server.cleanup()
