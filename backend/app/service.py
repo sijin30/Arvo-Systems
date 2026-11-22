@@ -14,7 +14,7 @@ import secrets
 from datetime import date, datetime
 from typing import Optional
 
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
 from . import audit, sla
@@ -79,15 +79,21 @@ def _require_assignee(agent: Agent, ticket: Ticket) -> None:
         )
 
 
+def customer_actor(customer: Customer) -> Actor:
+    return Actor("customer", customer.id, customer.name)
+
+
 def _add_message(
-    session: Session, ticket: Ticket, agent: Agent, kind: str, body: str, now: datetime
+    session: Session, ticket: Ticket, agent_id: Optional[int], kind: str, body: str, now: datetime
 ) -> Message:
+    """`agent_id` is the agent who wrote the message, or who logged it for the customer.
+    It is None when the customer wrote the message themselves."""
     message = Message(
         ticket_id=ticket.id,
         kind=kind,
         visibility="internal" if kind == "internal_note" else "public",
         author_type="customer" if kind == "customer_message" else "agent",
-        agent_id=agent.id,
+        agent_id=agent_id,
         body=body,
         created_at=now,
     )
@@ -140,11 +146,61 @@ def create_ticket(
     related_ticket_id: Optional[int],
     now: datetime,
 ) -> Ticket:
+    """An agent logs a ticket on behalf of a customer (phone, email, chat...)."""
     customer = session.scalar(select(Customer).where(Customer.email == customer_email))
     if customer is None:
         customer = Customer(name=customer_name, email=customer_email)
         session.add(customer)
         session.flush()
+    return _new_ticket(
+        session, agent_actor(agent), agent.id, customer,
+        subject=subject, description=description, priority=priority,
+        related_ticket_id=related_ticket_id, now=now,
+    )
+
+
+MAX_ACTIVE_TICKETS_PER_CUSTOMER = 20
+
+
+def create_ticket_as_customer(
+    session: Session,
+    customer: Customer,
+    *,
+    subject: str,
+    description: str,
+    priority: str,
+    now: datetime,
+) -> Ticket:
+    """A signed-in customer reports a problem.  It lands unassigned, in the shared queue."""
+    active = session.scalar(
+        select(func.count(Ticket.id)).where(
+            Ticket.customer_id == customer.id, Ticket.status.in_(ACTIVE_STATUSES)
+        )
+    )
+    if (active or 0) >= MAX_ACTIVE_TICKETS_PER_CUSTOMER:
+        raise conflict(
+            "too_many_open",
+            "You already have many open tickets. Please wait for some to be resolved.",
+        )
+    return _new_ticket(
+        session, customer_actor(customer), None, customer,
+        subject=subject, description=description, priority=priority,
+        related_ticket_id=None, now=now,
+    )
+
+
+def _new_ticket(
+    session: Session,
+    actor: Actor,
+    logged_by_agent_id: Optional[int],
+    customer: Customer,
+    *,
+    subject: str,
+    description: str,
+    priority: str,
+    related_ticket_id: Optional[int],
+    now: datetime,
+) -> Ticket:
     if related_ticket_id is not None and session.get(Ticket, related_ticket_id) is None:
         raise bad_request("related_not_found", "The related ticket does not exist.")
     ticket = Ticket(
@@ -164,7 +220,7 @@ def create_ticket(
         kind="customer_message",
         visibility="public",
         author_type="customer",
-        agent_id=agent.id,
+        agent_id=logged_by_agent_id,
         body=description,
         created_at=now,
     )
@@ -172,7 +228,7 @@ def create_ticket(
     session.flush()
     audit.record(
         session,
-        agent_actor(agent),
+        actor,
         "ticket.created",
         occurred_at=now,
         ticket_id=ticket.id,
@@ -181,6 +237,7 @@ def create_ticket(
             "customer_id": customer.id,
             "message_id": message.id,
             "related_ticket_id": related_ticket_id,
+            "created_by": actor.type,
         },
     )
     session.flush()
@@ -297,7 +354,7 @@ def add_message(
         raise bad_request("set_waiting_needs_reply", "Only a public reply can put a ticket on hold.")
 
     if kind == "internal_note":
-        message = _add_message(session, ticket, agent, kind, body, now)
+        message = _add_message(session, ticket, agent.id, kind, body, now)
         audit.record(
             session, actor, "message.internal_note", occurred_at=now,
             ticket_id=ticket.id, details={"message_id": message.id},
@@ -307,7 +364,7 @@ def add_message(
         _require_assignee(agent, ticket)
         if ticket.status not in ("open", "waiting_customer"):
             raise conflict("not_replyable", f"You cannot reply to a {ticket.status} ticket.")
-        message = _add_message(session, ticket, agent, kind, body, now)
+        message = _add_message(session, ticket, agent.id, kind, body, now)
         first = ticket.first_response_at is None
         if first:
             ticket.first_response_at = now
@@ -329,7 +386,7 @@ def add_message(
             raise conflict("use_reopen", "This ticket is resolved. Reopen it to log the customer's message.")
         if ticket.status not in ("open", "waiting_customer"):
             raise conflict("not_replyable", f"You cannot log a message on a {ticket.status} ticket.")
-        message = _add_message(session, ticket, agent, kind, body, now)
+        message = _add_message(session, ticket, agent.id, kind, body, now)
         audit.record(
             session, actor, "message.customer_message", occurred_at=now,
             ticket_id=ticket.id, details={"message_id": message.id},
@@ -361,7 +418,7 @@ def resolve_ticket(
         raise conflict("not_resolvable", f"A {ticket.status} ticket cannot be resolved.")
     actor = agent_actor(agent)
     if message:
-        reply = _add_message(session, ticket, agent, "public_reply", message, now)
+        reply = _add_message(session, ticket, agent.id, "public_reply", message, now)
         first = ticket.first_response_at is None
         if first:
             ticket.first_response_at = now
@@ -392,31 +449,92 @@ def resolve_ticket(
 def reopen_ticket(
     session: Session, agent: Agent, ticket_id: int, message: Optional[str], now: datetime
 ) -> Ticket:
+    """An agent reopens a resolved ticket because the customer got in touch."""
     ticket = lock_ticket(session, ticket_id)
+    return _reopen(session, ticket, agent_actor(agent), agent.id, message, now)
+
+
+def customer_reopen_ticket(
+    session: Session, customer: Customer, ticket_id: int, message: Optional[str], now: datetime
+) -> Ticket:
+    ticket = lock_ticket(session, ticket_id)
+    _require_owner_customer(customer, ticket)
+    return _reopen(session, ticket, customer_actor(customer), None, message, now)
+
+
+def _require_owner_customer(customer: Customer, ticket: Ticket) -> None:
+    # A ticket that is not yours looks exactly like a ticket that does not exist.
+    if ticket.customer_id != customer.id:
+        raise not_found()
+
+
+def customer_reply(
+    session: Session, customer: Customer, ticket_id: int, body: str, now: datetime
+) -> Ticket:
+    """A signed-in customer writes on their own ticket.  If we were waiting for them,
+    this is the answer: the SLA clock starts again."""
+    ticket = lock_ticket(session, ticket_id)
+    _require_owner_customer(customer, ticket)
+    holidays = get_holidays(session)
+    if ticket.status == "resolved":
+        raise conflict("use_reopen", "This ticket is resolved. Reopen it to add a message.")
+    if ticket.status == "closed":
+        raise conflict(
+            "closed_create_new",
+            "This ticket is closed. Please create a new ticket.",
+            related_ticket_id=ticket.id,
+        )
+    actor = customer_actor(customer)
+    message = _add_message(session, ticket, None, "customer_message", body, now)
+    audit.record(
+        session, actor, "message.customer_message", occurred_at=now,
+        ticket_id=ticket.id, details={"message_id": message.id},
+    )
+    if ticket.status == "waiting_customer":
+        _end_pause(ticket, now)
+        ticket.status = "open"
+        audit.record(
+            session, actor, "ticket.customer_replied", occurred_at=now, ticket_id=ticket.id,
+            details={"message_id": message.id, "clock": "resumed"},
+        )
+    ticket.updated_at = now
+    session.flush()
+    sync_breaches(session, ticket, holidays, now)
+    session.flush()
+    return ticket
+
+
+def _reopen(
+    session: Session,
+    ticket: Ticket,
+    actor: Actor,
+    message_agent_id: Optional[int],
+    message: Optional[str],
+    now: datetime,
+) -> Ticket:
     holidays = get_holidays(session)
     if ticket.status != "resolved":
         if ticket.status == "closed":
             raise conflict(
                 "closed_create_new",
-                "This ticket is closed. Create a new ticket for the customer instead.",
+                "This ticket is closed. Please create a new ticket.",
                 related_ticket_id=ticket.id,
             )
         raise conflict("not_resolved", "Only a resolved ticket can be reopened.")
     if ticket.resolved_at is None or not sla.reopen_window_open(ticket.resolved_at, now, holidays):
         raise conflict(
             "reopen_window_expired",
-            "This ticket was resolved more than a working week ago. "
-            "Create a new ticket for the customer instead.",
+            "This ticket was resolved more than a working week ago, so it can no longer be "
+            "reopened. Please create a new ticket.",
             related_ticket_id=ticket.id,
         )
-    actor = agent_actor(agent)
     _end_pause(ticket, now)
     ticket.status = "open"
     ticket.reopen_count += 1
     ticket.updated_at = now
     message_id = None
     if message:
-        logged = _add_message(session, ticket, agent, "customer_message", message, now)
+        logged = _add_message(session, ticket, message_agent_id, "customer_message", message, now)
         message_id = logged.id
     audit.record(
         session, actor, "ticket.reopened", occurred_at=now, ticket_id=ticket.id,
