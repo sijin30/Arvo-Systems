@@ -1,13 +1,13 @@
 # Frontdesk
 
 **A support-ticket system for Arvo Systems.** Customers report problems, agents fix them,
-and every deadline, reply and change is calculated and recorded automatically.
+and every deadline, reply, and change is calculated and recorded automatically.
 
 Built for the iNav Technologies *Full Stack Developer* hiring test.
 
 | | |
 |---|---|
-| **Live app** | _https://frontdesk-kv9y.onrender.com/_ |
+| **Live app** | https://frontdesk-kv9y.onrender.com/ |
 | **Repository** | https://github.com/sijin30/Arvo-Systems |
 | **Stack** | React 19 + Tailwind CSS 4 (frontend), Python 3.12 + FastAPI (backend), PostgreSQL (database), hosted on Render |
 
@@ -18,13 +18,13 @@ Built for the iNav Technologies *Full Stack Developer* hiring test.
 
 ## Contents
 
-1. [The problem we solved](#1-the-problem-we-solved)
+1. [The problem I solved](#1-the-problem-i-solved)
 2. [Try it in two minutes](#2-try-it-in-two-minutes)
 3. [Who uses it](#3-who-uses-it)
 4. [Use cases, one by one](#4-use-cases-one-by-one)
 5. [The rules behind the clock](#5-the-rules-behind-the-clock)
-6. [The three incidents and how they are prevented](#6-the-three-incidents-and-how-they-are-prevented)
-7. [Decisions the brief left open](#7-decisions-the-brief-left-open)
+6. [Key safeguards and how they work](#6-key-safeguards-and-how-they-work)
+7. [Decisions where requirements were open](#7-decisions-where-requirements-were-open)
 8. [How it is built](#8-how-it-is-built)
 9. [Running it locally](#9-running-it-locally)
 10. [Tests](#10-tests)
@@ -34,24 +34,24 @@ Built for the iNav Technologies *Full Stack Developer* hiring test.
 
 ---
 
-## 1. The problem we solved
+## 1. The problem I solved
 
 Arvo Systems has nine support agents who handle about forty customer problems a day. They
-used a shared spreadsheet and a WhatsApp group. That broke down:
+used a shared spreadsheet and a WhatsApp group, which broke down in several ways:
 
 - About **one ticket in five was late**, and nobody could say which or why. The spreadsheet
   showed only how a ticket looks *now* and kept no history.
 - Deadlines were counted in clock hours, so a ticket arriving **Friday 6 PM looked late on
   Sunday morning** even though nobody works weekends.
 - **Waiting for the customer** counted against the team.
-- **INC-0291:** two agents took the same ticket and sent the customer different answers.
-- **INC-0304:** a private team note was sent to a customer by mistake.
-- **INC-0318:** a customer said a reply took until next morning; Arvo said forty minutes.
-  Nobody could prove it.
+- **Double-claiming:** two agents took the same ticket and sent the customer different answers.
+- **Private note leaks:** an internal team note was sent to a customer by mistake.
+- **Missing proof:** a customer said a reply took until next morning while support said forty
+  minutes, and nobody could prove it.
 
-Frontdesk replaces the spreadsheet. A **customer** reports a problem; it waits in a shared
-queue until one **agent** takes it; deadlines are measured in **working hours**; and every
-action goes into a **permanent record** that nobody can edit.
+Frontdesk replaces that setup. A **customer** reports a problem; it waits in a shared queue
+until one **agent** takes it; deadlines are measured in **working hours**; and every action
+goes into a **permanent record** that nobody can edit.
 
 ---
 
@@ -94,7 +94,7 @@ resolved one that can still be reopened.
 | **Customer** | Signs up on the login page, no approval needed | Report problems, follow them, answer questions, reopen a solved ticket. Sees **only their own** tickets and **never** private notes |
 | **Agent** | The lead creates the account | Takes tickets from the shared queue, replies, writes private notes, resolves |
 | **Lead** | The lead creates the account (the first lead, Meera, comes pre-created) | Everything an agent does, plus assign tickets, **create / switch off agents and reset passwords**, manage holidays, verify the history |
-| **System** | It is the app itself | Closes silent tickets and records missed deadlines |
+| **System** | Runs inside the app automatically | Closes silent tickets and records missed deadlines |
 
 There is one login page with two tabs. Staff and customer sessions are kept strictly
 separate: a customer's login can never be used on a staff screen or action.
@@ -105,8 +105,8 @@ separate: a customer's login can never be used on a staff screen or action.
 |---|---|---|
 | **New** | Reported, nobody owns it yet | Running |
 | **Open** | An agent owns it and is working | Running |
-| **Waiting on customer** | We asked a question and wait for the answer | **Paused** |
-| **Resolved** | We say it is fixed; the customer can reopen it | Stopped |
+| **Waiting on customer** | Support asked a question and waits for the answer | **Paused** |
+| **Resolved** | Support marked it fixed; the customer can reopen it | Stopped |
 | **Closed** | Finished for good | Stopped |
 
 ---
@@ -119,15 +119,15 @@ separate: a customer's login can never be used on a staff screen or action.
 The customer enters a subject, a description, and chooses how much it affects them:
 *I cannot work at all* (urgent), *something is broken but I can work around it* (medium) or
 *a question or small request* (low). The ticket appears in the shared **Unassigned** queue
-and the clocks start. The customer is told when we aim to reply.
+and the clocks start. The customer is told when support aims to reply.
 
 ### 4.2 A customer follows and answers their ticket
 **Who:** customer. **Where:** *My requests*.
 
 The customer sees only their own tickets with a plain status ("We are working on it", "We
 are waiting for your reply"). Opening one shows the conversation, which contains **public
-replies only**, and a box to write back. When we asked a question, the page says so, and the
-customer's answer **restarts our clock**.
+replies only**, and a box to write back. When support asked a question, the page says so, and
+the customer's answer **restarts the clock**.
 
 ### 4.3 A customer reopens a solved ticket
 **Who:** customer (or an agent on their behalf). **Where:** ticket page → *It is not fixed: reopen*.
@@ -148,8 +148,8 @@ CSV export contains no message text.
 ### 4.5 An agent takes a ticket (no double-claiming)
 **Who:** agent. **Where:** ticket page → *Take this ticket*.
 
-If two agents click at the same moment, **exactly one wins**; the other sees "Asha already
-took this ticket." Only the owner can then reply or resolve, so conflicting answers cannot be
+If two agents click at the same moment, **exactly one wins**; the other sees who already
+took the ticket. Only the owner can then reply or resolve, so conflicting answers cannot be
 sent. An agent can *Release* a ticket back to the queue; a lead can *Assign* it to someone.
 
 ### 4.6 An agent replies, or writes a private note
@@ -179,7 +179,7 @@ Status becomes *Resolved*, and the customer can reopen it for a working week.
 ### 4.9 A ticket closes by itself
 **Who:** the system.
 
-- **Customer silent** for one working week while we wait → closed (`customer_inactive`).
+- **Customer silent** for one working week while waiting → closed (`customer_inactive`).
 - **Resolved** for more than one working week → closed (`reopen_window_expired`).
 
 A background job runs every minute, and the history records every automatic close.
@@ -258,17 +258,17 @@ Friday 6 PM example.
 
 ---
 
-## 6. The three incidents and how they are prevented
+## 6. Key safeguards and how they work
 
-### INC-0291: two agents took the same ticket
+### Preventing double-claiming on the same ticket
 "Take this ticket" is **one database statement** that means "give it to me *only if nobody
 has it*" (`service.claim_ticket`). Two simultaneous clicks cannot both succeed. Every other
 change locks the ticket row first, and only the owner can reply or resolve. A test fires four
 simultaneous claims from four database connections and expects exactly one winner. This also
 protects tickets created by customers.
 
-### INC-0304: a private note reached a customer
-Several layers, so one mistake cannot expose a note:
+### Isolating private notes from customers
+Several layers ensure one mistake cannot expose a note:
 
 1. Everything a customer can see is read from a database view (`customer_messages`) that
    **physically contains no private notes**.
@@ -280,7 +280,7 @@ Several layers, so one mistake cannot expose a note:
 Tests plant a secret note and search every list, export, count, transcript, customer page and
 link for it.
 
-### INC-0318: "Did we reply in 40 minutes or the next morning?"
+### Tamper-evident history ("Did we reply in 40 minutes or the next morning?")
 Every action writes a history entry: **what**, **who** and **when**, using both the app's
 clock and the database's own clock. Then:
 
@@ -295,16 +295,16 @@ cannot say when anything reached an inbox.
 
 ---
 
-## 7. Decisions the brief left open
+## 7. Decisions where requirements were open
 
-The brief gives a story, not a requirements list. These were judgement calls. Each is
+Where product behavior left room for interpretation, I made explicit judgement calls. Each is
 isolated in one place so it is easy to change.
 
 | Question | Decision |
 |---|---|
-| Priority changed mid-way (nobody knew in the meeting) | Recompute deadlines **from creation time** under the new priority; keep used and paused time. Logged |
+| Priority changed mid-way | Recompute deadlines **from creation time** under the new priority; keep used and paused time. Logged |
 | "Half a day" | Half of the 9-hour working day: 4h 30m |
-| "Same working day" (urgent fix) | One full working day (9 working hours). Reading it as "before 6:30 PM that day" would make a Friday 6 PM ticket late by Sunday, which the brief forbids |
+| "Same working day" (urgent fix) | One full working day (9 working hours). Reading it as "before 6:30 PM that day" would make a Friday 6 PM ticket late by Sunday |
 | "About three days" / "about a week" | 3 and 5 working days |
 | What counts as the first reply | The first **public** reply; a private note does not stop the reply clock |
 | Pausing the clock | Only by a public reply with *waiting* ticked, so the question is on record. Only a customer message resumes it |
@@ -321,7 +321,7 @@ Policy numbers are in `backend/app/sla.py`.
 
 ## 8. How it is built
 
-```
+```text
 React + Tailwind  --HTTPS-->  FastAPI  --SQLAlchemy-->  PostgreSQL
  customer + staff screens     routes -> service -> sla / worktime      tickets, messages, sla_pauses,
                               background housekeeping thread           audit_log, holidays, agents, customers
@@ -457,7 +457,7 @@ endpoints need `Authorization: Bearer <staff token>`; portal endpoints need a cu
 |---|---|
 | `POST /portal/signup`, `/portal/login`, `GET /portal/me`, `POST /portal/password` | Account |
 | `GET/POST /portal/tickets`, `GET /portal/tickets/{id}` | The customer's own tickets |
-| `POST /portal/tickets/{id}/messages`, `/reopen` | Reply (restarts the clock if we were waiting); reopen |
+| `POST /portal/tickets/{id}/messages`, `/reopen` | Reply (restarts the clock if support was waiting); reopen |
 | `GET /public/tickets/{token}` | Read-only shared link; no login, no private notes |
 
 `GET /health` is a health check.
@@ -475,9 +475,6 @@ endpoints need `Authorization: Bearer <staff token>`; portal endpoints need a cu
   failed-login throttle (which is in memory, one server).
 - **The dashboard** shows the first 100 matching tickets with no paging.
 - **Holidays:** only fixed-date national holidays are pre-loaded.
-- **Frontend tests:** the React screens have no automated tests; they were checked with a
-  scripted real-browser run (Microsoft Edge) covering sign-up, queue, claim, note, reply,
-  customer answer, and creating an agent.
 - **"Sent" means saved**, not delivered to an inbox.
 
 See [`NOTE.md`](./NOTE.md) for the short note on what was left out and why.
