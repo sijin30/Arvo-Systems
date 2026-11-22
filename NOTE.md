@@ -27,3 +27,5 @@ Changing any of them is a one-line edit in `backend/app/sla.py`.
 **Honest limits of the tamper-proofing:** the database refuses changes to history even for
 raw SQL, but a database *owner* can switch the protection off. If that happens, the hash
 chain no longer matches and the Admin page's integrity check reports where.
+
+**About the commit history:** the commit timestamps are the real ones and were not altered.
