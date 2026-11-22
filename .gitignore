@@ -1,1 +1,11 @@
 STEPS.md
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.pgtest/
+node_modules/
+dist/
+.env
+*.log
+.pgdev/
