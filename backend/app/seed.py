@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from . import clock, security, service
 from .config import Settings
-from .models import Agent, Holiday
+from .models import Agent, Customer, Holiday
 
 AGENTS = [
     ("Meera Nair", "meera", "lead"),
@@ -135,3 +135,18 @@ def _demo_tickets(session: Session) -> None:
         "Go to Settings > Team > Invite user. We have also emailed you a short guide.",
         now - timedelta(days=1),
     )
+
+
+DEMO_CUSTOMER_EMAIL = "priya@brightfin.example"
+
+
+def ensure_demo_customer(factory: sessionmaker[Session], settings: Settings) -> None:
+    """Give the demo customer from the seeded tickets a login, so reviewers can try the
+    customer side.  Idempotent: only fills in a password that is still empty."""
+    with factory() as session:
+        customer = session.scalar(select(Customer).where(Customer.email == DEMO_CUSTOMER_EMAIL))
+        if customer is not None and customer.password_hash is None:
+            customer.password_hash = security.hash_password(
+                settings.demo_password, settings.password_iterations
+            )
+            session.commit()

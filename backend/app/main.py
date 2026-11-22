@@ -31,6 +31,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         init_db(engine)
         if settings.seed_demo:
             seed.seed_if_empty(factory, settings)
+            seed.ensure_demo_customer(factory, settings)
         if settings.run_scheduler:
             scheduler.start()
         try:

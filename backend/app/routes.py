@@ -1,8 +1,6 @@
 """HTTP API.  Thin: validate, call the service layer, commit, present."""
 from __future__ import annotations
 
-import time
-from collections import defaultdict, deque
 from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, Query, Request, Response
@@ -10,27 +8,18 @@ from fastapi.responses import PlainTextResponse
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
-from . import audit, clock, jobs, security, service, views
+from . import accounts, audit, clock, jobs, security, service, throttle, views
 from . import schemas as s
 from .config import Settings
 from .deps import current_agent, get_session, get_settings, lead_agent
 from .errors import DomainError, bad_request, not_found
 from .models import Agent, AuditLog, Holiday, Ticket
+from .portal import portal
 
 api = APIRouter(prefix="/api")
 
 # ------------------------------------------------------------------ auth
-_FAILURES: dict[str, deque[float]] = defaultdict(deque)
-_WINDOW_SECONDS, _MAX_FAILURES = 300, 10
 _DUMMY_HASH = security.hash_password("not-a-real-password", 1000)
-
-
-def _throttled(key: str) -> bool:
-    attempts = _FAILURES[key]
-    cutoff = time.monotonic() - _WINDOW_SECONDS
-    while attempts and attempts[0] < cutoff:
-        attempts.popleft()
-    return len(attempts) >= _MAX_FAILURES
 
 
 @api.post("/auth/login", response_model=s.LoginOut)
@@ -40,19 +29,34 @@ def login(
     settings: Settings = Depends(get_settings),
 ):
     email = body.email.strip().lower()
-    if _throttled(email):
+    if throttle.agent_logins.blocked(email):
         raise DomainError(429, "too_many_attempts", "Too many failed logins. Try again in a few minutes.")
     agent = session.scalar(select(Agent).where(Agent.email == email))
     stored = agent.password_hash if agent else _DUMMY_HASH
     ok = security.verify_password(body.password, stored)
     if not (agent and agent.is_active and ok):
-        _FAILURES[email].append(time.monotonic())
+        throttle.agent_logins.record_failure(email)
         raise DomainError(401, "bad_credentials", "Incorrect email or password.")
-    _FAILURES.pop(email, None)
+    throttle.agent_logins.reset(email)
     return s.LoginOut(
-        token=security.create_token(settings, agent.id),
+        token=security.create_token(settings, security.AGENT, agent.id),
         agent=s.AgentOut(id=agent.id, name=agent.name, email=agent.email, role=agent.role),
     )
+
+
+@api.post("/auth/password", status_code=204)
+def change_password(
+    body: s.PasswordChangeIn,
+    session: Session = Depends(get_session),
+    settings: Settings = Depends(get_settings),
+    agent: Agent = Depends(current_agent),
+):
+    accounts.change_password(
+        session, agent, audit.agent_actor(agent),
+        current=body.current_password, new=body.new_password,
+        iterations=settings.password_iterations, now=clock.now(),
+    )
+    session.commit()
 
 
 @api.get("/auth/me", response_model=s.AgentOut)
@@ -347,4 +351,65 @@ def run_housekeeping(request: Request, _: Agent = Depends(lead_agent)):
     return jobs.run_housekeeping(request.app.state.session_factory)
 
 
+def _agent_admin(a: Agent, active_tickets: int) -> s.AgentAdminOut:
+    return s.AgentAdminOut(
+        id=a.id, name=a.name, email=a.email, role=a.role,
+        is_active=a.is_active, active_tickets=active_tickets,
+    )
+
+
+@admin.get("/admin/agents", response_model=list[s.AgentAdminOut])
+def admin_list_agents(session: Session = Depends(get_session), _: Agent = Depends(lead_agent)):
+    return [_agent_admin(a, n) for a, n in accounts.list_agents_for_admin(session)]
+
+
+@admin.post("/admin/agents", response_model=s.AgentAdminOut, status_code=201)
+def admin_create_agent(
+    body: s.AgentCreateIn,
+    session: Session = Depends(get_session),
+    settings: Settings = Depends(get_settings),
+    lead: Agent = Depends(lead_agent),
+):
+    agent = accounts.create_agent(
+        session, lead, name=body.name, email=body.email, password=body.password,
+        role=body.role, iterations=settings.password_iterations, now=clock.now(),
+    )
+    session.commit()
+    return _agent_admin(agent, 0)
+
+
+@admin.post("/admin/agents/{agent_id}/deactivate", response_model=s.AgentAdminOut)
+def admin_deactivate_agent(
+    agent_id: int, session: Session = Depends(get_session), lead: Agent = Depends(lead_agent)
+):
+    agent = accounts.set_agent_active(session, lead, agent_id, False, clock.now())
+    session.commit()
+    return _agent_admin(agent, 0)
+
+
+@admin.post("/admin/agents/{agent_id}/activate", response_model=s.AgentAdminOut)
+def admin_activate_agent(
+    agent_id: int, session: Session = Depends(get_session), lead: Agent = Depends(lead_agent)
+):
+    agent = accounts.set_agent_active(session, lead, agent_id, True, clock.now())
+    session.commit()
+    return _agent_admin(agent, 0)
+
+
+@admin.post("/admin/agents/{agent_id}/password", status_code=204)
+def admin_reset_password(
+    agent_id: int,
+    body: s.PasswordResetIn,
+    session: Session = Depends(get_session),
+    settings: Settings = Depends(get_settings),
+    lead: Agent = Depends(lead_agent),
+):
+    accounts.reset_agent_password(
+        session, lead, agent_id, body.password, settings.password_iterations, clock.now()
+    )
+    session.commit()
+
+
+
 api.include_router(admin)
+api.include_router(portal)
