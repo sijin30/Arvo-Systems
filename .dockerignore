@@ -1,0 +1,12 @@
+.git
+.gitignore
+**/node_modules
+**/dist
+**/.venv
+**/__pycache__
+**/.pytest_cache
+backend/.pgtest
+backend/.pgdev
+backend/tests
+*.md
+*.pdf

@@ -1,0 +1,23 @@
+# Render blueprint: one web service (backend + built frontend) and one PostgreSQL database.
+# Deploy: Render dashboard -> New -> Blueprint -> pick this repository.
+databases:
+  - name: frontdesk-db
+    plan: free
+    databaseName: frontdesk
+    user: frontdesk
+
+services:
+  - type: web
+    name: frontdesk
+    runtime: docker
+    plan: free
+    healthCheckPath: /api/health
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: frontdesk-db
+          property: connectionString
+      - key: SECRET_KEY
+        generateValue: true
