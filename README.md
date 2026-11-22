@@ -3,8 +3,6 @@
 **A support-ticket system for Arvo Systems.** Customers report problems, agents fix them,
 and every deadline, reply, and change is calculated and recorded automatically.
 
-Built for the iNav Technologies *Full Stack Developer* hiring test.
-
 | | |
 |---|---|
 | **Live app** | https://frontdesk-kv9y.onrender.com/ |
