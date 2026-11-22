@@ -15,7 +15,10 @@ every deadline, reply and change is on the record.
 ## What the brief asked for, and where it lives
 
 The brief contains no requirement list, only a meeting transcript and three incident
-reports. These are the rules found in them and how each is implemented.
+reports. These are the rules found in them and how each is implemented. On top of that,
+Frontdesk has the people side of a real support desk: **customers sign up and raise their
+own tickets**, and **the lead creates and manages the agents** (see
+[Who uses it](#who-uses-it)).
 
 | Rule found in the brief | How Frontdesk handles it | Code |
 |---|---|---|
@@ -31,7 +34,21 @@ reports. These are the rules found in them and how each is implemented.
 | **INC-0304** a private note reached a customer | Notes are filtered at the database: customer-facing code can only read the `customer_messages` view, which contains no internal rows. Customer-shaped responses have no field that could carry a note. Exports contain no message text at all | `db.py`, `views.py`, `schemas.py` |
 | **INC-0318** nobody could prove who did what, and when | Append-only, hash-chained audit log. Triggers refuse UPDATE/DELETE/TRUNCATE on history tables, even for raw SQL | `db.py`, `audit.py` |
 
-## Quick tour
+## Who uses it
+
+| Who | Gets an account by | Can do |
+|---|---|---|
+| **Customer** (outside user) | Signing up on the login page, no approval needed | Report a problem, follow it, answer questions, reopen a resolved ticket (for a working week). Sees only their own tickets and never a private note |
+| **Agent** | The lead creating the account | Take tickets from the shared queue, reply, write private notes, resolve |
+| **Lead** | The lead creating the account (the first lead is seeded) | Everything an agent does, plus assign tickets, create/switch off agents and reset passwords, manage holidays, verify the history |
+| **System** | n/a | Closes silent tickets and records missed deadlines |
+
+A customer's ticket lands **unassigned in a shared queue**; any agent can take it, and the
+database lets exactly one win (INC-0291). Staff and customers use one login page with two
+tabs, but their sessions are separate: a customer token never works on a staff endpoint,
+or the other way round.
+
+## Quick tour (support staff)
 
 1. Sign in (demo accounts below). The dashboard shows *My tickets*, with counters for
    active, unassigned, **already late** and **waiting on customer** tickets.
@@ -45,6 +62,21 @@ reports. These are the rules found in them and how each is implemented.
 5. The *History* panel lists every action with who and when. Leads get an **Admin**
    page for holidays, an integrity check of the history, and a manual housekeeping run.
 6. *Copy customer view link* gives a page exactly as the customer would see it.
+7. Leads also get a **Team** page: add an agent (a starting password is generated), switch an
+   agent off, or reset a password. An agent who still owns active tickets cannot be
+   switched off until the tickets are reassigned, and there is always one active lead.
+
+## Quick tour (customer)
+
+1. On the login page choose **I'm a customer**, then **Create an account** (name, email,
+   password of at least 8 characters).
+2. **Report a problem**: subject, description, and how much it affects you
+   (*I cannot work at all* / *something is broken, but I can work around it* / *a question or
+   small request*). This sets the priority, and an agent can change it later.
+3. **My requests** lists your tickets. Open one to read Arvo's replies and to answer. When we
+   ask you a question the page says so, and your answer restarts our clock.
+4. After a ticket is resolved you can **reopen** it for a working week; after that, report a
+   new request.
 
 ### Demo accounts
 
@@ -52,7 +84,8 @@ All nine agents exist; the password is the same for all (change it with `DEMO_PA
 
 | Email | Role |
 |---|---|
-| `meera@arvosystems.example` | Support lead (can assign, manage holidays, verify history) |
+| `priya@brightfin.example` | **Customer** (demo account; owns the seeded "finance team locked out" ticket) |
+| `meera@arvosystems.example` | Support lead (can assign, manage agents and holidays, verify history) |
 | `arjun@`, `anjali@`, `rahul@`, `sneha@`, `vishnu@`, `neha@`, `kiran@`, `fathima@` followed by `arvosystems.example` | Agent |
 
 Password: `Frontdesk@123`
@@ -95,7 +128,11 @@ These are judgement calls. Each is isolated in one place so it is easy to change
 | What counts as the first reply | The first **public** reply. A private note does not stop the reply clock |
 | Pausing the clock | Only by sending a public reply with *waiting* ticked, so the question is on record. Only a customer message (logged by the agent) resumes it. Agents cannot pause or resume by themselves |
 | Closed tickets | Final. Auto-closed tickets, and tickets resolved more than a working week ago, are not reopened; the customer gets a new, linked ticket |
-| Who are customers | The brief describes a screen for agents, so agents log tickets and customer messages. Customers get a read-only link, not a login |
+| How a customer's ticket reaches an agent | Shared unassigned queue; an agent takes it. Customers do not pick an agent, which keeps the double-claim protection |
+| Customer accounts | Open sign-up with email and password, **no email verification** (the app sends no email). To stop someone claiming another person's history, sign-up is refused for an email that support has already logged tickets for ("contact support") |
+| Priority on a customer ticket | The customer chooses it from plain-language options; agents can change it and the deadlines are then recalculated from creation time |
+| Agent management | The lead creates agents with a starting password, can switch them off and reset passwords. Passwords are never written to the audit log. A reset does not end sessions already open (they expire after 12 hours) |
+| Agents logging for customers | Still possible (phone/email) via *New ticket* and *Log customer's message* |
 | Holidays | Seeded with fixed-date national holidays only. Festival dates that move every year (Onam, Vishu, Eid, Diwali...) are added by the lead on the Admin page |
 | Time zone | Asia/Kolkata (IST) everywhere; stored in UTC |
 
@@ -120,6 +157,10 @@ React (Vite, Tailwind)  --HTTPS-->  FastAPI  --SQLAlchemy-->  PostgreSQL
   single statement, so concurrent clicks cannot both succeed. Every other change takes a
   `SELECT ... FOR UPDATE` row lock first. A test fires four simultaneous claims from four
   database connections and expects exactly one winner.
+- **Customers see only their own tickets.** Every portal query is scoped to the signed-in
+  customer, and a ticket that is not yours answers 404 exactly like one that does not exist.
+  Staff and customer tokens carry a type, so ids that overlap between the two tables can
+  never be confused.
 - **Notes cannot leak.** Three layers: the customer API reads only from the
   `customer_messages` view; the customer response models contain no note-capable field;
   audit entries store message ids, never message text. Tests search every list, export,
@@ -161,7 +202,8 @@ npm run dev                        # http://localhost:5173 (proxies /api to :800
 ```
 
 Tables, integrity triggers, the nine agents, holidays and demo tickets are created
-automatically on first start.
+automatically on first start. A database created by an earlier version is upgraded in
+place on start-up (`MIGRATIONS` in `backend/app/db.py`).
 
 To run it like production (one process): `npm run build` in `frontend/`, then start the
 API with `STATIC_DIR` pointing at `frontend/dist`, and open http://localhost:8000.
@@ -186,10 +228,12 @@ cd backend
 pytest
 ```
 
-83 tests: the working-time and SLA maths (including the Friday 6 PM example, holidays,
+110 tests: the working-time and SLA maths (including the Friday 6 PM example, holidays,
 pausing and priority changes), the full ticket lifecycle over HTTP, real concurrent
-claims, privacy (no note ever reaches a customer-facing response) and integrity (raw SQL
-cannot rewrite history; tampering is detected). The tests start a bundled PostgreSQL
+claims, privacy (no note ever reaches a customer-facing response), integrity (raw SQL
+cannot rewrite history; tampering is detected), the customer portal (sign-up, isolation
+between customers, replies resuming the clock, reopen window) and agent management
+(permissions, deactivation rules, an upgrade of an older database). The tests start a bundled PostgreSQL
 automatically; set `TEST_DATABASE_URL` to use your own.
 
 ## API overview
@@ -212,6 +256,12 @@ All endpoints are under `/api` and, except login and the customer view, need
 | `GET/POST/DELETE /holidays` | Holiday calendar (changes are lead-only) |
 | `GET /audit/verify`, `POST /ops/housekeeping` | Lead-only: verify history, run the sweep now |
 | `GET /health` | Health check |
+| `POST /portal/signup`, `/portal/login`, `GET /portal/me`, `POST /portal/password` | Customer account |
+| `GET/POST /portal/tickets`, `GET /portal/tickets/{id}` | The signed-in customer's own tickets |
+| `POST /portal/tickets/{id}/messages`, `/reopen` | Customer reply (restarts the clock if we were waiting); reopen within the window |
+| `GET /admin/agents`, `POST /admin/agents` | Lead-only: list agents with workload, create an agent |
+| `POST /admin/agents/{id}/deactivate`, `/activate`, `/password` | Lead-only: switch off or on, reset a password |
+| `POST /auth/password` | An agent changes their own password |
 
 ## Deploying
 
