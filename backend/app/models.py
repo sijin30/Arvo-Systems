@@ -65,6 +65,8 @@ class Customer(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(120))
     email: Mapped[str] = mapped_column(String(255), unique=True)
+    # NULL for a customer an agent logged a ticket for; set once they have an account.
+    password_hash: Mapped[Optional[str]] = mapped_column(String(255))
 
 
 class Holiday(Base):
@@ -189,7 +191,7 @@ class AuditLog(Base):
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     seq: Mapped[int] = mapped_column(BigInteger, unique=True)
     ticket_id: Mapped[Optional[int]] = mapped_column(ForeignKey("tickets.id"))
-    actor_type: Mapped[str] = mapped_column(String(10))  # agent | system
+    actor_type: Mapped[str] = mapped_column(String(10))  # agent | customer | system
     actor_id: Mapped[Optional[int]] = mapped_column(Integer)
     actor_name: Mapped[str] = mapped_column(String(120))
     action: Mapped[str] = mapped_column(String(60))
@@ -200,7 +202,7 @@ class AuditLog(Base):
     row_hash: Mapped[str] = mapped_column(String(64))
 
     __table_args__ = (
-        CheckConstraint(_in("actor_type", ("agent", "system")), name="audit_actor_type_ck"),
+        CheckConstraint(_in("actor_type", ("agent", "system", "customer")), name="audit_actor_type_ck"),
         Index("audit_ticket_idx", "ticket_id", "seq"),
     )
 

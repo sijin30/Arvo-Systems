@@ -181,10 +181,35 @@ INTEGRITY_SQL: list[str] = [
 ]
 
 
+# `create_all` only creates what is missing; it never alters an existing table.  These
+# statements bring a database created by an earlier version up to date.  Idempotent.
+MIGRATIONS: list[str] = [
+    "ALTER TABLE customers ADD COLUMN IF NOT EXISTS password_hash VARCHAR(255)",
+    # Customers can now act, so the audit log may name them as the actor.
+    """
+    DO $$
+    BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint
+            WHERE conname = 'audit_actor_type_ck'
+              AND strpos(pg_get_constraintdef(oid), 'customer') > 0
+        ) THEN
+            ALTER TABLE audit_log DROP CONSTRAINT IF EXISTS audit_actor_type_ck;
+            ALTER TABLE audit_log ADD CONSTRAINT audit_actor_type_ck
+                CHECK (actor_type IN ('agent', 'system', 'customer'));
+        END IF;
+    END
+    $$
+    """,
+]
+
+
 def init_db(engine: Engine) -> None:
-    """Create tables and integrity rules.  Safe to run on every start-up."""
+    """Create tables, migrate older ones and add integrity rules.  Safe on every start-up."""
     with engine.begin() as conn:
         conn.execute(text("SELECT pg_advisory_xact_lock(:k)"), {"k": _SCHEMA_LOCK})
         Base.metadata.create_all(conn)
+        for statement in MIGRATIONS:
+            conn.exec_driver_sql(statement)
         for statement in INTEGRITY_SQL:
             conn.exec_driver_sql(statement)
