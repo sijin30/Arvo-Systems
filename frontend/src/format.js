@@ -53,3 +53,18 @@ const ACTION_LABEL = {
   'sla.resolution_breached': 'Fix deadline missed',
 }
 export const actionLabel = (a) => ACTION_LABEL[a] || a
+
+// How a customer-facing status is worded, and its colour.
+export const CUSTOMER_STATUS = {
+  received: ['We have received your request', 'indigo'],
+  in_progress: ['We are working on it', 'green'],
+  waiting_for_you: ['We are waiting for your reply', 'blue'],
+  resolved: ['Resolved', 'slate'],
+  closed: ['Closed', 'slate'],
+}
+
+export const CUSTOMER_SEVERITY = [
+  ['urgent', 'I cannot work at all', 'We aim to reply within 2 working hours.'],
+  ['medium', 'Something is broken, but I can work around it', 'We aim to reply within half a working day.'],
+  ['low', 'A question or a small request', 'We aim to reply within 1 working day.'],
+]

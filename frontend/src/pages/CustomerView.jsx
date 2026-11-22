@@ -2,15 +2,7 @@ import { useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { api } from '../api.js'
 import { Badge, ErrorBanner, Spinner } from '../components.jsx'
-import { fmtShort } from '../format.js'
-
-const STATUS = {
-  received: ['We have received your request', 'indigo'],
-  in_progress: ['We are working on it', 'green'],
-  waiting_for_you: ['We are waiting for your reply', 'blue'],
-  resolved: ['Resolved', 'slate'],
-  closed: ['Closed', 'slate'],
-}
+import { CUSTOMER_STATUS as STATUS, fmtShort } from '../format.js'
 
 /** What the customer sees. It is fed only by the public API, which never returns private notes. */
 export default function CustomerView() {
