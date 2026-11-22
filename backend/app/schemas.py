@@ -239,3 +239,105 @@ class CustomerTicketView(BaseModel):
     status: Literal["received", "in_progress", "waiting_for_you", "resolved", "closed"]
     created_at: datetime
     messages: list[CustomerMessage]
+
+
+# ------------------------------------------------- accounts and the portal
+class SignupIn(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    email: str = Field(max_length=255)
+    password: str = Field(max_length=200)
+
+    @field_validator("name", mode="after")
+    @classmethod
+    def _name(cls, v: str) -> str:
+        v = _clean(v)
+        if not v:
+            raise ValueError("must not be blank")
+        return v
+
+
+class CustomerOut(BaseModel):
+    id: int
+    name: str
+    email: str
+
+
+class CustomerLoginOut(BaseModel):
+    token: str
+    customer: CustomerOut
+
+
+class PasswordChangeIn(BaseModel):
+    current_password: str = Field(max_length=200)
+    new_password: str = Field(max_length=200)
+
+
+class PortalTicketCreateIn(BaseModel):
+    subject: str = Field(min_length=1, max_length=200)
+    description: str = Field(min_length=1, max_length=10000)
+    priority: Priority
+
+    @field_validator("subject", "description", mode="after")
+    @classmethod
+    def _not_blank(cls, v: str) -> str:
+        v = _clean(v)
+        if not v:
+            raise ValueError("must not be blank")
+        return v
+
+
+class ReplyIn(BaseModel):
+    body: str = Field(min_length=1, max_length=10000)
+
+    @field_validator("body", mode="after")
+    @classmethod
+    def _body(cls, v: str) -> str:
+        v = _clean(v)
+        if not v:
+            raise ValueError("must not be blank")
+        return v
+
+
+CustomerStatus = Literal["received", "in_progress", "waiting_for_you", "resolved", "closed"]
+
+
+class PortalTicketSummary(BaseModel):
+    id: int
+    reference: str
+    subject: str
+    priority: Priority
+    status: CustomerStatus
+    created_at: datetime
+    updated_at: datetime
+
+
+class PortalTicketView(CustomerTicketView):
+    id: int
+    priority: Priority
+    can_reply: bool
+    can_reopen: bool
+    reopen_until: Optional[datetime]
+
+
+class AgentCreateIn(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    email: str = Field(max_length=255)
+    password: str = Field(max_length=200)
+    role: Literal["agent", "lead"] = "agent"
+
+    @field_validator("name", mode="after")
+    @classmethod
+    def _name(cls, v: str) -> str:
+        v = _clean(v)
+        if not v:
+            raise ValueError("must not be blank")
+        return v
+
+
+class PasswordResetIn(BaseModel):
+    password: str = Field(max_length=200)
+
+
+class AgentAdminOut(AgentOut):
+    is_active: bool
+    active_tickets: int

@@ -288,3 +288,45 @@ def tickets_csv(items: list[s.TicketSummary]) -> str:
             ]
         )
     return out.getvalue()
+
+
+# ------------------------------------------------------------ customer portal
+def portal_summary(t: Ticket) -> s.PortalTicketSummary:
+    return s.PortalTicketSummary(
+        id=t.id,
+        reference=t.reference,
+        subject=t.subject,
+        priority=t.priority,
+        status=_CUSTOMER_STATUS[t.status],
+        created_at=t.created_at,
+        updated_at=t.updated_at,
+    )
+
+
+def list_portal_tickets(session: Session, customer: Customer) -> list[s.PortalTicketSummary]:
+    rows = session.scalars(
+        select(Ticket).where(Ticket.customer_id == customer.id).order_by(Ticket.updated_at.desc(), Ticket.id.desc())
+    ).unique().all()
+    return [portal_summary(t) for t in rows]
+
+
+def portal_view(
+    session: Session, t: Ticket, holidays: set[date], now: datetime
+) -> s.PortalTicketView:
+    base = customer_view(session, t)
+    reopen_until = None
+    can_reopen = False
+    if t.status == "resolved" and t.resolved_at is not None:
+        can_reopen = sla.reopen_window_open(t.resolved_at, now, holidays)
+        if can_reopen:
+            from . import worktime as wt
+
+            reopen_until = wt.add_working_time(t.resolved_at, sla.REOPEN_WINDOW, holidays)
+    return s.PortalTicketView(
+        **base.model_dump(),
+        id=t.id,
+        priority=t.priority,
+        can_reply=t.status in ("new", "open", "waiting_customer"),
+        can_reopen=can_reopen,
+        reopen_until=reopen_until,
+    )
