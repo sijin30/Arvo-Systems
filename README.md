@@ -7,7 +7,7 @@ Built for the iNav Technologies *Full Stack Developer* hiring test.
 
 | | |
 |---|---|
-| **Live app** | _add the live URL here_ |
+| **Live app** | _https://frontdesk-kv9y.onrender.com/_ |
 | **Repository** | https://github.com/sijin30/Arvo-Systems |
 | **Stack** | React 19 + Tailwind CSS 4 (frontend), Python 3.12 + FastAPI (backend), PostgreSQL (database), hosted on Render |
 
