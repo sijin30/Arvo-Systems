@@ -1,5 +1,6 @@
 // Thin fetch wrapper. Every error from the server arrives as { error: { code, message } }.
 const TOKEN_KEY = 'frontdesk.token'
+const KIND_KEY = 'frontdesk.kind' // 'agent' (support staff) or 'customer'
 let token = null
 let onUnauthorized = () => {}
 
@@ -12,11 +13,24 @@ export function loadToken() {
   return token
 }
 
-export function setToken(value) {
+export function loadKind() {
+  try {
+    return localStorage.getItem(KIND_KEY)
+  } catch {
+    return null
+  }
+}
+
+export function setToken(value, kind = null) {
   token = value
   try {
-    if (value) localStorage.setItem(TOKEN_KEY, value)
-    else localStorage.removeItem(TOKEN_KEY)
+    if (value) {
+      localStorage.setItem(TOKEN_KEY, value)
+      if (kind) localStorage.setItem(KIND_KEY, kind)
+    } else {
+      localStorage.removeItem(TOKEN_KEY)
+      localStorage.removeItem(KIND_KEY)
+    }
   } catch {
     /* storage unavailable: the session simply will not survive a reload */
   }
